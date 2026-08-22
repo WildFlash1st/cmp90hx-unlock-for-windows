@@ -1,0 +1,14 @@
+C:\Windows\System32\cmd.exe /k F:\llama\llama\llama-bench.exe -m F:\llama\llama-2-7b.Q4_0.gguf -p 512 -n 16 -ngl 99  -r 3
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 10239 MiB):
+  Device 0: NVIDIA CMP 90HX, compute capability 8.6, VMM: yes, VRAM: 10239 MiB
+load_backend: loaded CUDA backend from F:\llama\llama\ggml-cuda.dll
+load_backend: loaded RPC backend from F:\llama\llama\ggml-rpc.dll
+load_backend: loaded CPU backend from F:\llama\llama\ggml-cpu-haswell.dll
+| model                          |       size |     params | backend    | ngl |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | --------------: | -------------------: |
+| llama 7B Q4_0                  |   3.56 GiB |     6.74 B | CUDA       |  99 |           pp512 |     3705.40 + 410.21 |
+| llama 7B Q4_0                  |   3.56 GiB |     6.74 B | CUDA       |  99 |            tg16 |        139.20 + 2.56 |
+
+build: 55edb2de4 (9902)
+
+F:\llama\llama>
