@@ -1,0 +1,14 @@
+# Build artifacts
+*.o
+*.so
+*.efi
+*.img
+
+# Firmware blobs and exploit payloads are NOT distributed in git.
+# See BUILDING.md for their exact provenance and how to obtain them.
+blobs/
+*.bin
+
+# Local scratch
+*.log
+build/

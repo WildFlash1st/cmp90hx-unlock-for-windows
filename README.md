@@ -1,33 +1,36 @@
 # 🎮 CMP 90HX Unlock for Windows
 
+🇬🇧 English | [🇷🇺 Русский](README.ru.md)
+
 Unlock the full computing and graphics power of the **NVIDIA CMP 90HX** (GA102, 10 GB, PCI ID `10de:220d`) on any system with Windows — using a simple USB stick, an EFI bootloader, and **no reboots**.
 
-The unlock runs **before any OS boots**, so Windows (or any other OS) simply starts with the card already at full power.
+The unlock runs **before any OS boots**, so Windows simply starts with the card already at full power.
 
----
+> ⚠️ **Honest expectations:** this is a mining card, and it is *not* a gaming
+> GPU replacement — no display outputs, PCIe Gen1 ×16 in the current release,
+> and gaming requires a community-patched driver (see below). Compute/AI is
+> what it excels at after the unlock. Details in [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
 
 ## What is the CMP 90HX?
 
 The CMP 90HX is a GA102 die sold by NVIDIA as a **"mining-only" card**. NVIDIA crippled it in firmware: CUDA compute and graphics features are disabled, and the card runs at a fraction of its real performance. The typical locked card delivers ~230 t/s on llama-bench; an unlocked one delivers **~3700 t/s** (16× more).
 
-This project re-enables the full die using an EFI application that runs from the bootable USB, before the OS loads.
+This project re-enables the full die using an EFI application that runs from the bootable USB, before the OS loads. **It is now open source** — see [`src/`](src/) and [BUILDING.md](BUILDING.md).
 
 ## How the unlock works
 
-1. **Preload.** The Windows boot manager (`bootmgfw.efi`) is read from your Windows disk into RAM using raw block I/O and a built-in FAT32 parser. (No UEFI SimpleFileSystem is used — it hangs on some AMI boards.)
+1. **Preload.** The Windows boot manager (`bootmgfw.efi`) is read into RAM using raw block I/O and a built-in FAT32 parser. (No UEFI SimpleFileSystem is used — it hangs on some AMI boards.)
 2. **Unlock.** A custom EFI application drives the GPU's SEC2 (Falcon) microcontroller through its secure boot sequence:
    - opens the memory-write-protection registers (WPR2),
    - loads a signed "canary" payload (V67) into the SEC2 booter,
    - opens the GPU's protected mode (PLM),
-   - sets the compute selectors (SS0/SS1).
+   - sets the compute selectors (SS0/SS1) and render masks.
 3. **Reset.** A Function Level Reset (FLR) clears the latched protection registers while the compute selectors survive.
-4. **Boot.** Windows boots straight from the RAM-loaded boot manager. **The system is never rebooted** — a POST would reset the GPU and drop the unlock.
+4. **Boot.** The app returns into the firmware without a POST, and Windows loads with the card already unlocked. **The system is never rebooted** — a POST would reset the GPU and drop the unlock.
 
-Result: Windows sees the full **10 GB VRAM**, all CUDA cores, and full clocks.
+The exploit itself: the NVIDIA-signed SEC2 booter has a stack-canary bug (Jon Pry, *"A Canary in the Crypto Mine"*). When it validates our oversized 64 KB "signature", execution runs into a ROP chain that performs arbitrary privileged register writes — including PLM open.
 
 ## What happens after you pick the USB in the boot menu (F12)
-
-Two scenarios, both expected:
 
 | Scenario | Result |
 |---|---|
@@ -46,10 +49,9 @@ Verified on two real systems.
 ```
 Device 0: NVIDIA CMP 90HX, compute capability 8.6, VRAM: **10239 MiB** (full 10 GB).
 
-### Gaming
-**Resident Evil Requiem** was tested and is playable, streamed via Moonlight (screenshot and HWiNFO log in [`tests/`](tests/)).
+### Gaming (with caveats!)
 
-Measured during the game session (HWiNFO log, 424 samples):
+**Resident Evil Requiem** was tested and is playable when streamed via Moonlight (screenshot and HWiNFO log in [`tests/`](tests/)):
 
 | Metric | Value |
 |---|---|
@@ -59,13 +61,11 @@ Measured during the game session (HWiNFO log, 424 samples):
 | GPU power draw | up to **145 W** |
 | GPU temperature | 44 – 57 °C |
 
-The card runs at full clocks and full VRAM during gaming — exactly like a normal GA102.
+That session used soldered capacitors (hardware mod) and PCIe Gen 1 ×16. Treat gaming as a bonus: no display outputs on the card, limited link bandwidth, and a patched driver is mandatory.
 
-> The card was tested with **soldered capacitors** (hardware mod), in **PCIe Gen 1 ×16** mode.
+### Modified driver for rendering/gaming
 
-### Modified driver for gaming
-
-The stock NVIDIA driver still blocks the CMP 90HX from gaming (the driver-level restriction lives in the driver, not only in the firmware). To play games after the unlock, install a patched NVIDIA driver following the instructions at:
+The stock NVIDIA driver still blocks CMP cards from rendering (the restriction lives in the driver too, not only the firmware). To run graphics after the unlock, install a patched NVIDIA driver:
 
 👉 **[https://github.com/dartraiden/NVIDIA-patcher](https://github.com/dartraiden/NVIDIA-patcher)**
 
@@ -79,32 +79,38 @@ The stock NVIDIA driver still blocks the CMP 90HX from gaming (the driver-level 
 
 ## Installation
 
-1. Download the release image: [`cmp90-unlock-v3.img`](https://github.com/WildFlash1st/cmp90hx-unlock-for-windows/releases/latest) (v3.0).
+1. Download the latest release image from the [Releases](https://github.com/WildFlash1st/cmp90hx-unlock-for-windows/releases) page.
 2. Write the image to the USB stick with [Balena Etcher](https://etcher.balena.io/), [Rufus](https://rufus.ie/) (DD mode), or `dd`:
    ```bash
-   dd if=cmp90-unlock-v3.img of=/dev/sdX bs=4M status=progress
+   dd if=<image>.img of=/dev/sdX bs=4M status=progress
    ```
    ⚠️ Double-check the device name — this wipes the target stick!
-3. Verify the image:
-   ```bash
-   md5sum cmp90-unlock-v3.img
-   # 6cbcc911666f4ac4dc71fce27abeeef8
-   ```
+3. Verify the md5 against the one published with the release.
 4. Reboot, press **F12** (or your board's boot-menu key), select the USB stick.
 5. The unlock runs automatically — Windows loads at full power. No keys to press, nothing to configure.
-6. *(For gaming only)* Install the patched NVIDIA driver from [NVIDIA-patcher](https://github.com/dartraiden/NVIDIA-patcher) — see [Modified driver for gaming](#modified-driver-for-gaming).
+6. *(For rendering/games only)* Install the patched NVIDIA driver from [NVIDIA-patcher](https://github.com/dartraiden/NVIDIA-patcher).
 
 ### Re-applying after a reboot
 
 The unlock is **volatile**: a full reboot (POST) resets the GPU. To unlock again, simply boot from the USB stick again and let it chainload Windows. That's it.
 
-## Files in this repository
+## Building from source
 
-- `cmp90-unlock-v3.img` — release image (attached to the [Releases](https://github.com/WildFlash1st/cmp90hx-unlock-for-windows/releases) page)
-- `tests/` — proof: game screenshot, HWiNFO monitoring log, llama-bench output
-- `README.md` — this file
+```bash
+git clone https://github.com/WildFlash1st/cmp90hx-unlock-for-windows
+cd cmp90hx-unlock-for-windows/src
+BLOBS=/path/to/blobs bash build.sh
+```
 
-The project is distributed as a **closed-source binary release** — the unlock image only, no sources.
+See **[BUILDING.md](BUILDING.md)** for prerequisites, blob provenance and the USB-image recipe. Known limitations and unsolved problems live in **[KNOWN-ISSUES.md](KNOWN-ISSUES.md)**.
+
+## Repository layout
+
+- `src/unlock_v2.c` — the entire EFI application (all build variants come from it)
+- `src/build.sh` — build script (gnu-efi); `src/tools/` — firmware extraction helpers
+- `docs/` — platform gotchas, register notes, Code 43 diagnostic report, blob patching procedure
+- `tests/` — proof artifacts: game screenshot, HWiNFO log, llama-bench output
+- Release images are attached to the [Releases](https://github.com/WildFlash1st/cmp90hx-unlock-for-windows/releases) page
 
 ## Credits
 
@@ -112,6 +118,7 @@ This unlock builds on years of public research and tooling. Special thanks to:
 
 - **[bendy2](https://github.com/bendy2/cmp90hx)** — the V67 exploit and the direct-compute patch for driver `580.159.03` — *the key that opened PLM*
 - **Jon Pry (Zenodo)** — *"A Canary in the Crypto Mine: Defeating Stack Protection in a GPU Secure Coprocessor"* ([DOI: 10.5281/zenodo.20916112](https://zenodo.org/records/20916112)) — the debug-booter overflow disclosure
+- **[cmpunlocker](https://github.com/jdowning100/cmpunlocker)** — the rejoin16 PLM/render-mask method and Gen2 research this project ports
 - **d3dx9** — the Python Falcon emulator & ROP chain
 
 ## Donations
@@ -125,4 +132,4 @@ Thank you! 🙏
 
 ## Disclaimer
 
-This project is for **educational and research purposes**. Flashing/unlocking modifies GPU behavior and may void warranties. Use at your own risk. The authors are not responsible for any damage, instability, or loss caused by using this software.
+This project is for **educational and research purposes**. It modifies GPU behavior, may void warranties, and interacts with signed firmware in ways NVIDIA did not intend. Use at your own risk. The authors are not responsible for any damage, instability, or loss caused by using this software.
