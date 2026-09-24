@@ -73,12 +73,12 @@ e27221f5ddd563602423b035b3274f2d  unlock_v3n.efi   (v3.03 as released)
 cb2345612306e8b853bbcb3ab132478c  unlock_v3f.efi   (v3.02-full as released)
 ```
 
-After the multi-card fix in the current source (v3.04-rc builds):
+After the multi-card fix in the current source (v3.04 builds):
 
 ```
-aaae91b64a26b95264d1d32895eba455  unlock_v3n.efi
+0ccc4357794aa4c83102bef3ec081bf5  unlock_v3n.efi
 c708f44ef397dbe74cdb4ab4571ca037  unlock_v3f.efi
-e0f72cd9dcb0eb0a685b5bcfedf568f7  unlock_v3.efi
+511801cb82f8a3bf36c95af7ed39a3d9  unlock_v3.efi
 ```
 (`unlock_v2_wr.efi` is unchanged: `80df38e33040d1e2e363f054c4bc446d`.)
 

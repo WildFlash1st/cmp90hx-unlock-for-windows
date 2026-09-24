@@ -4337,16 +4337,16 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 #ifdef RELEASE_BUILD
 #ifdef PCIE_GEN2_REJOIN
 # ifdef FULL_NOGEN2
-    Print(L"\n=== CMP90HX Unlock v3.03 FULL-NOGEN2 (render table, no pcie-gen2) ===\n");
+    Print(L"\n=== CMP90HX Unlock v3.04 FULL-NOGEN2 (render table, no pcie-gen2) ===\n");
 # else
     Print(L"\n=== CMP90HX Unlock v3.02 FULL (render table + gen2) ===\n");
 # endif
 #else
-    Print(L"\n=== CMP90HX Unlock v3.01 (multi-card release, compute-only) ===\n");
+    Print(L"\n=== CMP90HX Unlock v3.04 compute-only (multi-card) ===\n");
 #endif
 #elif defined(EFI_AUTOTEST)
 # ifdef FULL_NOGEN2
-    Print(L"\n=== CMP90HX Unlock v3.03-nogen2 (render table) [AUTOTEST] ===\n");
+    Print(L"\n=== CMP90HX Unlock v3.04-nogen2 (render table) [AUTOTEST] ===\n");
 # else
     Print(L"\n=== CMP90HX Unlock v2.101 (multipass + GFX/SS verify) [AUTOTEST] ===\n");
 # endif
