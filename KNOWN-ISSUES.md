@@ -40,6 +40,11 @@ digest) and `docs/DIAG-REPORT-2026-08-25-CODE43.md` (the Code 43 root cause).
 7. **One card per boot iteration in multi-card systems.** `MULTI_CARD`
    unlocks cards sequentially using NVRAM iteration + return-to-firmware;
    all cards end up unlocked without rebooting, but it takes one pass each.
+   Note: in v3.03 the fire path (render-mask table) did not advance the
+   card index, so on systems that enter fire mode the cycle froze after the
+   first fire card — remaining cards stayed locked. Fixed in the current
+   source (the fire path now advances the index, and a cold boot restarts
+   the cycle at card 0); rebuild required to pick up the fix.
 
 ## Unsolved / workaround-in-place
 

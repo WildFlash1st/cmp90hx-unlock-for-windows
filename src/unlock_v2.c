@@ -4368,6 +4368,30 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
               (INTN)g_mcCount, (INTN)g_mcIndex + 1, g_mcAdvance ? 1 : 0);
         if (g_mcAdvance)
             mc_var_set(L"CMP90CNT", (UINT32)g_mcCount);
+        /* v3.04: холодный бут (POST перелокал ВСЕ карты) — если idx>0,
+         * цикл продолжился бы «с середины»: карта 0 осталась бы залоченной
+         * (в v3.03 fire-путь не сдвигал idx, и индекс застревал на 1).
+         * Тёплая итерация: карта 0 ещё разлочен (PLM/SS переживают возврат
+         * в прошивку без POST) — idx сохраняем. */
+        if (g_mcIndex > 0) {
+            EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL *sRb = gRb;
+            UINTN sBus = gBus, sDev = gDev, sFn = gFn;
+            BOOLEAN c0open = FALSE;
+
+            mc_pick(0);
+            gBar0Base = cfg_read32(0x10) & ~0xF;
+            enable_mem_decode();
+            c0open = is_unlocked();
+            gRb = sRb; gBus = sBus; gDev = sDev; gFn = sFn;
+
+            if (!c0open) {
+                Print(L"multi-card: карта 0 залочена (холодный бут) — "
+                      L"цикл перезапускается с карты 0\n");
+                g_mcIndex = 0;
+                g_mcAdvance = (g_mcCount > 0);
+                mc_var_set(L"CMP90IDX", 0);
+            }
+        }
         if (!mc_pick(g_mcIndex)) {
             Print(L"ERROR: CMP90HX не найден\n");
             Status = EFI_NOT_FOUND;
@@ -5290,6 +5314,22 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
                 uefi_call_wrapper(BS->Stall, 1, 300000);
                 Print(L"v3.03: возврат в прошивку — Windows по BootOrder "
                       L"без POST (маски/GFX/SS сохранятся)\n");
+#endif
+#ifdef MULTI_CARD
+                /* v3.04: fire-путь теперь сдвигает multi-card индекс так же,
+                 * как обычный путь. В v3.03 advance был только в обычном
+                 * пути — после fire-карты idx застревал: остальные карты не
+                 * обрабатывались, а после следующего POST карта 0 уже не
+                 * анлокалась. NVRAM-записи в том же состоянии (после
+                 * финального FLR), что и в обычном пути. */
+                if (g_mcAdvance) {
+                    Print(L"multi-card: карта %d разлочена (fire) -> BootNext "
+                          L"на себя (без ребута)\n", (INTN)g_mcIndex + 1);
+                    mc_var_set(L"CMP90IDX", (UINT32)(g_mcIndex + 1));
+                    mc_set_bootnext_self(ImageHandle);
+                    goto done;   /* возврат в прошивку: следующая карта */
+                }
+                mc_vars_clear();   /* последняя карта — BootOrder (Windows) */
 #endif
                 goto done;
         } else if (!have2 && (Status == EFI_SUCCESS || directOk || earlyOk)) {
