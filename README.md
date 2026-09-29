@@ -24,7 +24,7 @@ This project re-enables the full die using an EFI application that runs from the
    - opens the memory-write-protection registers (WPR2),
    - loads a signed "canary" payload (V67) into the SEC2 booter,
    - opens the GPU's protected mode (PLM),
-   - sets the compute selectors (SS0/SS1) and render masks.
+   - sets the compute selectors (SS0/SS1) and enables the graphics bin (GFX_SPEED_SELECT = 4).
 3. **Reset.** A Function Level Reset (FLR) clears the latched protection registers while the compute selectors survive.
 4. **Boot.** The app returns into the firmware without a POST, and Windows loads with the card already unlocked. **The system is never rebooted** — a POST would reset the GPU and drop the unlock.
 

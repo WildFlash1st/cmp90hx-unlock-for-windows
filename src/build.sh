@@ -6,7 +6,8 @@
 #   BLOBS=/path/to/blobs bash build.sh
 #
 # The resulting binaries are byte-identical to the released ones when built
-# against the same blobs (release v3.03: unlock_v3n.efi md5 e27221f5ddd56360…).
+# against the same blobs (release v3.05: unlock_v3n.efi md5 824fab33873b32d1…,
+# unlock_v3f.efi md5 c708f44ef397dbe7…).
 set -e
 
 WORK="$(cd "$(dirname "$0")" && pwd)"
@@ -103,4 +104,4 @@ build_one unlock_v3n          -DRELEASE_BUILD -DMULTI_CARD -DPCIE_GEN2_REJOIN \
 echo
 echo "Deploy to USB (FAT32, EFI/BOOT/BOOTX64.EFI) + gsp_ga10x.bin from the"
 echo "NVIDIA 610.43.03 package next to it. For real hardware use"
-echo "unlock_v3n.efi (v3.03). See BUILDING.md."
+echo "unlock_v3n.efi (v3.05 FULL-NOGEN2). See BUILDING.md."

@@ -19,7 +19,16 @@ Tested with gcc 12 and gnu-efi 3.0.15 on x86_64 Linux.
 
 The blobs are embedded into the binary at link time. They are **not** in this
 repository: most of them are extracted from NVIDIA's signed driver/VBIOS
-images, and one is an exploit payload. You have to produce them yourself:
+images, and one is an exploit payload. You have to produce them yourself.
+`src/build.sh` checks for all eight and refuses to build if any is missing —
+there is no way around this, every variant links the same set (even the
+compute-only one).
+
+Two things the columns below do not make obvious: the SEC2 booter and the
+GspRmBoot images are **bindata** — they live in `open-gpu-kernel-modules`
+(`g_bindata_kgspGetBinArchive*`), *not* in the userspace `.run` package — and
+`v67_payload.bin` comes from **bendy2's** public CMP90HX research (see README
+credits), not from any NVIDIA artifact.
 
 | Blob | Size | What it is / where it comes from |
 |---|---|---|
@@ -50,6 +59,16 @@ to the USB stick next to `BOOTX64.EFI`.
 
 ## 3. Build
 
+> **Do not compile `unlock_v2.c` by hand.** All the `-D` flags in
+> `src/build.sh` are load-bearing: they decide which phases even exist in the
+> binary, and a hand-rolled `gcc` line will silently produce the wrong (or a
+> non-release) variant. In particular a build **without** `-DRELEASE_BUILD`
+> keeps the interactive `WaitForKey` pause and the SFS/`bootmgfw` chainload
+> path — that is the "Windows stuff" you see referenced in the source. Such a
+> binary is a dev build: it waits for a keypress and tries to chainload
+> `\EFI\Microsoft\Boot\bootmgfw.efi` into RAM, which is *not* the released
+> behaviour and can look like a hang. Always build with `src/build.sh`.
+
 ```bash
 cd src
 BLOBS=/path/to/blobs bash build.sh     # or put blobs into src/blobs/
@@ -59,9 +78,9 @@ Outputs (all built from the same `unlock_v2.c`):
 
 | Binary | Flags | Notes |
 |---|---|---|
-| `unlock_v3n.efi` | `RELEASE_BUILD MULTI_CARD PCIE_GEN2_REJOIN FULL_NOGEN2` | **Current release (v3.03)** — use this on real hardware |
-| `unlock_v3f.efi` | `…PCIE_GEN2_REJOIN` | v3.02-full: adds gen2 link config; known Code 43 issue, see KNOWN-ISSUES |
-| `unlock_v3.efi` | `RELEASE_BUILD MULTI_CARD` | v3.01: compute-only (no render table!) |
+| `unlock_v3n.efi` | `RELEASE_BUILD MULTI_CARD PCIE_GEN2_REJOIN FULL_NOGEN2` | **Current release (v3.05)** — use this on real hardware. Walks only the 3 FEAT-page PLMs; the XVE/XP3G/OPTB Gen2 masks are compiled out |
+| `unlock_v3f.efi` | `…PCIE_GEN2_REJOIN` | v3.02-full: full 37-entry mask table + gen2 link config; slow (~10 min) walk on a cold boot and known Code 43 issue, see KNOWN-ISSUES |
+| `unlock_v3.efi` | `RELEASE_BUILD MULTI_CARD` | compute-only — no fire machinery, so no GFX/render unlock |
 | `unlock_v2.efi` | dev | Interactive pauses, gen experiments |
 | `unlock_v2_test.efi`, `unlock_v3n_test.efi` | +`EFI_AUTOTEST` | QEMU test stand |
 | `unlock_v2_wr.efi` | `ENDGAME_WARMRESET` | Plan-B endgame, unused |
@@ -69,18 +88,20 @@ Outputs (all built from the same `unlock_v2.c`):
 Reference checksums of the released binaries (built against our blob set):
 
 ```
-e27221f5ddd563602423b035b3274f2d  unlock_v3n.efi   (v3.03 as released)
-cb2345612306e8b853bbcb3ab132478c  unlock_v3f.efi   (v3.02-full as released)
+824fab33873b32d174ebe620fe2a8475  unlock_v3n.efi   (v3.05 as released)
+d864d8da8b08fdc472403b44115e55d0  unlock_v3.efi    (v3.05 compute-only)
+c708f44ef397dbe74cdb4ab4571ca037  unlock_v3f.efi   (v3.02-full, unchanged from v3.04)
 ```
+(`unlock_v2.efi` `017d0a4871710f1f2fb16c3468a636e9` and `unlock_v2_wr.efi`
+`80df38e33040d1e2e363f054c4bc446d` are unchanged from earlier releases.)
 
-After the multi-card fix in the current source (v3.04 builds):
+Historical checksums, for reference:
 
 ```
-0ccc4357794aa4c83102bef3ec081bf5  unlock_v3n.efi
-c708f44ef397dbe74cdb4ab4571ca037  unlock_v3f.efi
-511801cb82f8a3bf36c95af7ed39a3d9  unlock_v3.efi
+e27221f5ddd563602423b035b3274f2d  unlock_v3n.efi   (v3.03)
+0ccc4357794aa4c83102bef3ec081bf5  unlock_v3n.efi   (v3.04)
+511801cb82f8a3bf36c95af7ed39a3d9  unlock_v3.efi    (v3.04 compute-only)
 ```
-(`unlock_v2_wr.efi` is unchanged: `80df38e33040d1e2e363f054c4bc446d`.)
 
 Your md5 will differ if your blobs differ — what matters is that the banner
 printed at boot identifies the variant.
@@ -115,6 +136,6 @@ Always check the content of the image, not just the file:
 ```bash
 LOOP=$(losetup -P -f --show $IMG); mount "${LOOP}p1" /mnt/img
 md5sum /mnt/img/EFI/BOOT/BOOTX64.EFI          # == md5sum unlock_v3n.efi
-python3 -c "print('v3.03 FULL-NOGEN2'.encode('utf-16-le') in open('/mnt/img/EFI/BOOT/BOOTX64.EFI','rb').read())"
+python3 -c "print('v3.05 FULL-NOGEN2'.encode('utf-16-le') in open('/mnt/img/EFI/BOOT/BOOTX64.EFI','rb').read())"
 umount /mnt/img; fsck.vfat -n "${LOOP}p1"; losetup -d "$LOOP"
 ```

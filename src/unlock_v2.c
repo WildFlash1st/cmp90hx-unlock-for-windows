@@ -54,19 +54,25 @@
  * ---------------------------------------------------------------------------
  *   RELEASE_BUILD        release behaviour: no pauses, return-to-firmware
  *   MULTI_CARD           enumerate every 220d; NVRAM iteration between cards
- *   PCIE_GEN2_REJOIN     include render-mask table + fire machinery.
- *                        WITHOUT IT THE RENDER PHASE IS NOT EVEN COMPILED
- *                        (that is how v3.01 shipped compute-only by mistake)
- *   FULL_NOGEN2          v3.03: keep render table, drop the PCIe-gen2 link
- *                        domain, add tail cleanup (SEC2 kill + final FLR);
- *                        fixes the Code 43 of v3.02-full
+ *   PCIE_GEN2_REJOIN     include the mask table + fire machinery + GFX_SEL/
+ *                        SS0/SS1 application. WITHOUT IT THE RENDER PHASE IS
+ *                        NOT EVEN COMPILED (that is how v3.01 shipped
+ *                        compute-only by mistake). The table itself is the
+ *                        rejoin16 *PCIe-Gen2* mask list (XVE/XP3G/OPTB).
+ *   FULL_NOGEN2          v3.05: drop the PCIe-gen2 link domain (and the 34
+ *                        Gen2 masks with it — only the 3 FEAT-page PLMs are
+ *                        walked), add tail cleanup (SEC2 kill + final FLR);
+ *                        fixes the Code 43 of v3.02-full and the ~10-min
+ *                        reboot-prone walk of v3.03/v3.04 (issue #5)
  *   EFI_AUTOTEST         QEMU test-stand behaviour: auto-advance, extra dumps
  *   PCIE_GEN_EXPERIMENT  dev-only Gen2/Gen3 register experiments
  *   ENDGAME_WARMRESET    plan-B endgame (BootNext + warm reset), unused
  *
  *   v3.01 = RELEASE_BUILD + MULTI_CARD                       (compute only)
  *   v3.02 = + PCIE_GEN2_REJOIN                               (Code 43 bug)
- *   v3.03 = + PCIE_GEN2_REJOIN + FULL_NOGEN2                 (current release)
+ *   v3.03 = + PCIE_GEN2_REJOIN + FULL_NOGEN2                 (Code 43 fix)
+ *   v3.04 = multi-card index fix
+ *   v3.05 = FULL_NOGEN2 walks only the FEAT-page PLMs        (current release)
  *
  * ---------------------------------------------------------------------------
  * Embedded blobs (objcopy'd in by src/build.sh; NOT distributed in git)
@@ -987,17 +993,36 @@ static BOOLEAN mc_set_bootnext_self(EFI_HANDLE ImageHandle)
  * shadow registers, NOT fuses: with PLM open they become writable — but
  * the V67 chain fires exactly TWICE per boot cycle (#1 stock payload
  * opens PLM, #2 carries ONE crafted {addr,value} pair), and each pair
- * needs its own FLR-separated mini-cycle. Table = 37 pairs. After the
- * last pair the final pass applies GFX_SPEED_SELECT/SS0/SS1 and
- * (unless FULL_NOGEN2) the gen2 link configuration.
+ * needs its own FLR-separated mini-cycle. Table = 37 pairs (3 FEAT-page
+ * PLMs + 34 PCIe-Gen2 masks). A NOGEN2 build keeps only the 3 FEAT PLMs:
+ * the Gen2 masks are dead weight for a build that never touches the link,
+ * and walking them on a cold boot cost ~10 min + a mid-walk reboot on real
+ * boards (issue #5). After the last pair the final pass applies
+ * GFX_SPEED_SELECT/SS0/SS1 and (unless FULL_NOGEN2) the gen2 link config.
  * jdowning100/pearlfortune: Gen1 cap = PLM-защита XVE/XP3G (НЕ fuse!).
  * V67-цепь срабатывает ОДИН раз за FLR-разделённую загрузку → одна запись
- * {addr,value} за прогон. Таблица 36 пар из их rejoin16-apply-all.sh.
+ * {addr,value} за прогон. Таблица 36 пар из их rejoin16-apply-all.sh
+ * (она про PCIe-Gen2; NOGEN2-сборка берёт из неё только FEAT-PLM×3).
  * Цикл итерации: FLR на входе (разделение) → восстановление BAR0 →
  * полный ранний путь с пропатченным payload → verify readback до cleanup.
  * Финальная итерация: маски открыты → Gen2-конфиг хостом + GFX_SPEED_SELECT.
  * Требует MULTI_CARD (mc_var_get/set, mc_set_bootnext_self, mc_vars_clear). */
 #ifdef PCIE_GEN2_REJOIN
+#ifdef FULL_NOGEN2
+/* v3.05 (issue #5): a NOGEN2 build never configures the PCIe link, so the
+ * 34 Gen2 masks below (XVE/XP3G/OPTB/LINK_CAP) have nothing to do here.
+ * Every entry costs one FLR-separated mini-cycle (~15 s, two SEC2 fires);
+ * on a cold boot with every mask locked that was ~10 minutes, and the
+ * platform rebooted part way through on two independent boards (Kaby Lake
+ * 36/37, Ryzen 24/37). Keep only the FEAT-page PLMs the render path needs:
+ *   0x823804 FEAT_OVR_PLM  — compute PLM; booter#1's stock payload already
+ *                            opens it (entry 0, skipped by the walk loop)
+ *   0x823800 FEAT_OVR_ECC  — privilege mask of the FEAT page
+ *   0x823b04 GFX_SPEED_SELECT PLM — 0x823830 sticks only with it open */
+static const struct { UINT32 addr, val; } g_rj16[] = {
+    {0x00823804U,0xffffffffU},{0x00823800U,0xffffffffU},{0x00823b04U,0xffffffffU},
+};
+#else /* !FULL_NOGEN2: full rejoin16 mask table (render + PCIe Gen2) */
 static const struct { UINT32 addr, val; } g_rj16[] = {
     {0x00823804U,0xffffffffU},{0x00088fe8U,0xffffffffU},{0x00088fecU,0xffffffffU},
     {0x00088ff0U,0xffffffffU},{0x00088ff4U,0xffffffffU},{0x00088ff8U,0xffffffffU},
@@ -1017,6 +1042,7 @@ static const struct { UINT32 addr, val; } g_rj16[] = {
      * проходит, LnkCap анонсирует 5 GT/s («card advertises Gen2»). */
     {0x00088084U,0x00453d02U},
 };
+#endif /* FULL_NOGEN2 */
 #define RJ16_N ((INTN)(sizeof(g_rj16)/sizeof(g_rj16[0])))
 static BOOLEAN g_gen2Fire = FALSE;
 static BOOLEAN g_gen2Quick = FALSE;   /* v2.99h: маски уже открыты — сразу конфиг */
@@ -4306,7 +4332,7 @@ find_cmp90hx(void)
     return EFI_NOT_FOUND;
 }
 
-/* ==== Application entry point — release flow map (v3.03) ====
+/* ==== Application entry point — release flow map (v3.05) ====
  * banner -> locate card(s) -> gen2 fire-mode decision (NVRAM counter
  * CMP90G2; quick-check whether masks are already open) -> BAR0 + MEM_EN ->
  * preload bootmgfw into RAM (skipped on intermediate fire iterations) ->
@@ -4337,16 +4363,16 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 #ifdef RELEASE_BUILD
 #ifdef PCIE_GEN2_REJOIN
 # ifdef FULL_NOGEN2
-    Print(L"\n=== CMP90HX Unlock v3.04 FULL-NOGEN2 (render table, no pcie-gen2) ===\n");
+    Print(L"\n=== CMP90HX Unlock v3.05 FULL-NOGEN2 (render, FEAT-PLM only) ===\n");
 # else
     Print(L"\n=== CMP90HX Unlock v3.02 FULL (render table + gen2) ===\n");
 # endif
 #else
-    Print(L"\n=== CMP90HX Unlock v3.04 compute-only (multi-card) ===\n");
+    Print(L"\n=== CMP90HX Unlock v3.05 compute-only (multi-card) ===\n");
 #endif
 #elif defined(EFI_AUTOTEST)
 # ifdef FULL_NOGEN2
-    Print(L"\n=== CMP90HX Unlock v3.04-nogen2 (render table) [AUTOTEST] ===\n");
+    Print(L"\n=== CMP90HX Unlock v3.05-nogen2 (render, FEAT-PLM only) [AUTOTEST] ===\n");
 # else
     Print(L"\n=== CMP90HX Unlock v2.101 (multipass + GFX/SS verify) [AUTOTEST] ===\n");
 # endif

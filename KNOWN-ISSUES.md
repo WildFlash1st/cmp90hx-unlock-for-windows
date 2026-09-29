@@ -1,7 +1,7 @@
 # Known issues & unsolved problems
 
 An honest list of what does **not** work or remains unverified, as of the
-v3.03 release (2026-08-25). See also `docs/GOTCHAS.md` (platform quirks
+v3.05 release (2026-09-30). See also `docs/GOTCHAS.md` (platform quirks
 digest) and `docs/DIAG-REPORT-2026-08-25-CODE43.md` (the Code 43 root cause).
 
 ## Fundamental
@@ -22,9 +22,15 @@ digest) and `docs/DIAG-REPORT-2026-08-25-CODE43.md` (the Code 43 root cause).
    v3.03 (tail cleanup: kill SEC2, final FLR, no MMIO after FLR, no NVRAM
    access). The gen2 domain stays disabled until it is re-proven separately.
 
-4. **v3.03 render path was QEMU-confirmed, not yet confirmed on real
-   hardware** at release time. Compute-only v3.01 and the general flow are
-   real-HW proven; report your results if you run v3.03 on metal.
+4. **The v3.03/v3.04 NOGEN2 fire walk crossed the whole 37-entry mask table
+   even though it configures no PCIe link** (issue #5). Each entry = one FLR
+   mini-cycle (~15 s); on a cold boot with every mask locked that was ~10
+   minutes, and two independent boards **rebooted mid-walk** (Kaby Lake at
+   36/37, Ryzen at 24/37). v3.05 walks only the three FEAT-page PLMs the
+   render path actually needs (0x823804 / 0x823800 / 0x823b04) and drops the
+   34 XVE/XP3G/OPTB/LINK_CAP Gen2 masks, so a cold unlock is a couple of
+   mini-cycles (~1 min). The full table is still compiled into `unlock_v3f.efi`
+   (v3.02-full), the only build that runs the gen2 link config.
 
 ## Constraints
 
@@ -40,11 +46,10 @@ digest) and `docs/DIAG-REPORT-2026-08-25-CODE43.md` (the Code 43 root cause).
 7. **One card per boot iteration in multi-card systems.** `MULTI_CARD`
    unlocks cards sequentially using NVRAM iteration + return-to-firmware;
    all cards end up unlocked without rebooting, but it takes one pass each.
-   Note: in v3.03 the fire path (render-mask table) did not advance the
-   card index, so on systems that enter fire mode the cycle froze after the
-   first fire card — remaining cards stayed locked. Fixed in the current
-   source (the fire path now advances the index, and a cold boot restarts
-   the cycle at card 0); rebuild required to pick up the fix.
+   Note: in v3.03 the fire path (mask table) did not advance the card index,
+   so on systems that enter fire mode the cycle froze after the first fire
+   card — remaining cards stayed locked. Fixed in v3.04 (the fire path now
+   advances the index, and a cold boot restarts the cycle at card 0).
 
 ## Unsolved / workaround-in-place
 
