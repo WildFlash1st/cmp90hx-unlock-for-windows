@@ -77,8 +77,13 @@ build_one() {
         "$EFI_LIB/crt0-efi-x86_64.o" \
         "$out.o" $OBJECTS \
         -lgnuefi -lefi -o "$out.so"
+    # -j .rodata* is REQUIRED on gnu-efi >= 3.0.18: that release moved
+    # *(.rodata*) out of .data into its own output section. Every L"..." literal
+    # (all Print text and the boot banner) lives there, so without it objcopy
+    # silently drops them and the .efi boots into garbage/hang. Older gnu-efi
+    # (<= 3.0.17) folds .rodata into .data, so the flag is a no-op there.
     objcopy -j .text -j .sdata -j .data -j .dynamic -j .dynsym -j .rel* \
-        -j .rela* -j .reloc --target=efi-app-x86_64 \
+        -j .rela* -j .reloc -j .rodata* --target=efi-app-x86_64 \
         "$out.so" "$out.efi"
     echo "[*] Built: $out.efi ($(stat -c%s "$out.efi") bytes)"
 }

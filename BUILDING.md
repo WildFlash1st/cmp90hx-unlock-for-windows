@@ -13,7 +13,17 @@ missing).
 apt install build-essential gnu-efi python3
 ```
 
-Tested with gcc 12 and gnu-efi 3.0.15 on x86_64 Linux.
+Tested on x86_64 Linux. Known-good toolchains: Debian 12 (gcc 12.2,
+binutils 2.40, gnu-efi 3.0.15) and Ubuntu 24.04 (gnu-efi 3.0.17).
+
+> **gnu-efi ≥ 3.0.18 pitfall (hit on Debian 13 / trixie).** 3.0.18 moved
+> `*(.rodata*)` out of the `.data` output section into its own `.rodata`
+> section. Every wide string literal (`L"..."`: all `Print` text and the boot
+> banner) lands there, so an `objcopy` line that forgets `-j .rodata*` still
+> produces an `.efi` — it links and is the right size — but the strings are not
+> in the image, so at boot the app prints garbage and hangs. `src/build.sh`
+> keeps `.rodata*`, so building through it works on both old and new gnu-efi.
+> If you assemble the toolchain by hand, add `-j .rodata*`.
 
 ## 2. Firmware/payload blobs (not distributed here)
 
