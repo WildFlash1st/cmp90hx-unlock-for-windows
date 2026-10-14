@@ -836,6 +836,7 @@ static VOID mc_vars_clear(void)
 {
     uefi_call_wrapper(RT->SetVariable, 6, L"CMP90IDX", &mcGuid, 0, 0, NULL);
     uefi_call_wrapper(RT->SetVariable, 6, L"CMP90CNT", &mcGuid, 0, 0, NULL);
+    uefi_call_wrapper(RT->SetVariable, 6, L"CMP90G2",  &mcGuid, 0, 0, NULL);
 }
 
 /* Как find_cmp90hx, но собирает ВСЕ 220d (без раннего выхода) */
@@ -4363,12 +4364,12 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 #ifdef RELEASE_BUILD
 #ifdef PCIE_GEN2_REJOIN
 # ifdef FULL_NOGEN2
-    Print(L"\n=== CMP90HX Unlock v3.05 FULL-NOGEN2 (render, FEAT-PLM only) ===\n");
+    Print(L"\n=== CMP90HX Unlock v3.06-test FULL-NOGEN2 (multi-card fix) ===\n");
 # else
-    Print(L"\n=== CMP90HX Unlock v3.02 FULL (render table + gen2) ===\n");
+    Print(L"\n=== CMP90HX Unlock v3.06-test FULL (render table + gen2) ===\n");
 # endif
 #else
-    Print(L"\n=== CMP90HX Unlock v3.05 compute-only (multi-card) ===\n");
+    Print(L"\n=== CMP90HX Unlock v3.06-test compute-only (multi-card fix) ===\n");
 #endif
 #elif defined(EFI_AUTOTEST)
 # ifdef FULL_NOGEN2
@@ -4414,7 +4415,7 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
                 Print(L"multi-card: карта 0 залочена (холодный бут) — "
                       L"цикл перезапускается с карты 0\n");
                 g_mcIndex = 0;
-                g_mcAdvance = (g_mcCount > 0);
+                g_mcAdvance = (g_mcCount > 1);
                 mc_var_set(L"CMP90IDX", 0);
             }
         }
@@ -5336,11 +5337,23 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
                 { INTN k; for (k = 0; k < 16; k++) mmio_read32(SEC2_ENGINE); }
                 uefi_call_wrapper(BS->Stall, 1, 200000);
                 Print(L"gen2: финальный FLR (сброс защёлкнутого WPR2)...\n");
-                do_flr();
-                uefi_call_wrapper(BS->Stall, 1, 300000);
+                {
+                    /* FLR обнуляет BARs (шаблон 4446-4449/5070-5073). Без
+                     * возврата BAR0 следующий проход этой карты и проверка
+                     * карты 0 (4413) читали бы MMIO от базы 0 → дедлок. */
+                    UINT32 saveBar = cfg_read32(0x10) & ~0xF;
+                    do_flr();
+                    uefi_call_wrapper(BS->Stall, 1, 300000);
+                    if (saveBar) cfg_write32(0x10, saveBar);
+                }
                 Print(L"v3.03: возврат в прошивку — Windows по BootOrder "
                       L"без POST (маски/GFX/SS сохранятся)\n");
 #endif
+                /* fire-проход карты завершён: снять CMP90G2, чтобы СЛЕДУЮЩАЯ
+                 * карта начала с базового прохода. Штатное удаление (5301)
+                 * закрыто #ifndef FULL_NOGEN2 и в v3.05-сборке не компилируется. */
+                uefi_call_wrapper(RT->SetVariable, 6, L"CMP90G2", &mcGuid,
+                                  0, 0, NULL);
 #ifdef MULTI_CARD
                 /* v3.04: fire-путь теперь сдвигает multi-card индекс так же,
                  * как обычный путь. В v3.03 advance был только в обычном
@@ -5414,9 +5427,25 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
          * СРАЗУ после FLR — StartImage из ОЗУ, БЕЗ печатей и чтений MMIO
          * (функция «мертва» до конца загрузки; консоль на второй ГПУ). */
         Print(L"FLR (сброс защёлкнутого WPR2)...\n");
-        do_flr();
-        uefi_call_wrapper(BS->Stall, 1, 300000);   /* PCIe: 100мс + запас */
+        {
+            /* FLR обнуляет BAR0 — вернуть, иначе fire-проход этой же карты
+             * (setup на 4446) прочтёт saveBar=0 и весь обход уйдёт в базу 0. */
+            UINT32 saveBar = cfg_read32(0x10) & ~0xF;
+            do_flr();
+            uefi_call_wrapper(BS->Stall, 1, 300000);   /* PCIe: 100мс + запас */
+            if (saveBar) cfg_write32(0x10, saveBar);
+        }
 
+#ifdef PCIE_GEN2_REJOIN
+        /* База карты готова, CMP90G2=0 выставлен выше (5363). Индекс НЕ
+         * двигаем: сначала fire-проход ЭТОЙ карты — там живёт
+         * GFX_SPEED_SELECT (5147-5165). Иначе карта 0 навсегда остаётся без
+         * рендера, а её fire-проход достаётся следующей карте. */
+        Print(L"gen2: база карты %d/%d готова -> BootNext на себя (fire-проход)\n",
+              (INTN)g_mcIndex + 1, (INTN)g_mcCount);
+        mc_set_bootnext_self(ImageHandle);
+        goto done;   /* возврат в прошивку: тот же индекс, fire-проход */
+#else
 #ifdef MULTI_CARD
         if (g_mcAdvance) {
             Print(L"multi-card: карта %d разлочена -> BootNext на себя (без ребута)\n",
@@ -5426,6 +5455,7 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
             goto done;   /* возврат в прошивку: она перезапустит нас с флешки */
         }
         mc_vars_clear();   /* последняя карта — дальше как обычно chainload */
+#endif
 #endif
 
         /* v2.99n: Chainload Windows из ОЗУ заменён на BootNext -> Windows:
